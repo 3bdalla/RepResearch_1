@@ -1,0 +1,249 @@
+#An analysis of activity data
+##Loading and pre-processing
+
+Downloading the dataset and import in to the R environment:
+
+```{r}
+
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip",temp)
+df <- read.csv(unz(temp, "activity.csv"), sep = ",", stringsAsFactors = FALSE)
+unlink(temp)
+
+```
+
+By looking at a summary of the data we can see that there are three variables in the dataframe: steps, date, and interval; with the steps column holding a noticeable amount of NA values.
+
+```{r}
+summary(df)
+
+
+```
+
+##Mean total number of steps taken per day
+Assigning the total number of steps taken each day to a separate data frame using the dplyr package.
+
+```{r, message = FALSE}
+library(dplyr)
+
+as.Date(df$date) -> df$date_reformat
+
+df %>% 
+  select(date_reformat, steps) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Total = sum(steps)) %>% 
+  arrange(date_reformat, Total) -> df_totals
+
+```
+
+Using this summarised dataframe, we can now plot a histogram of the total steps taken per day.
+
+```{r, message = FALSE}
+
+library(ggplot2)
+
+ggplot(df_totals, aes(Total)) + 
+  geom_histogram(bins = 12) +
+  labs(x = "Total steps per day") + 
+  scale_x_continuous(breaks = pretty(df_totals$Total, 10))
+
+```
+
+Judging from the histogram, it appears that most of the totals steps fall in the range of 10000 to 14000 steps per day.
+
+By summarising the data again, we can calculate the means and medians per day.
+
+```{r, message = FALSE}
+
+df %>% 
+  select(date_reformat, steps) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = mean(steps, na.rm = TRUE), Type = "Mean") %>% 
+  arrange(date_reformat, Avg) -> df_means
+
+df %>% 
+  select(date_reformat, steps) %>% 
+  filter(steps != 0) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = median(steps, na.rm = TRUE), Type = "Median") %>% 
+  arrange(date_reformat, Avg) -> df_medians
+
+  rbind(df_means, df_medians) -> df_averages
+
+ggplot(df_averages, aes(date_reformat, Avg, fill = Type)) + 
+  geom_bar(stat = "identity") + 
+  labs(x = "Dates", y = "Steps", title = "Mean and Median steps taken per day") + 
+  scale_x_date(date_breaks = "3 days") + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+```
+
+There were plenty of zero steps that were taken, which distorts the median steps taken per day. These zero values had to be removed in order to show a meaningful median value. As shown in the graph, there is a clear noticeable disparity betweem the mean and median steps taken per day, which might imply that in some of the 5 minute intervals, the steps taken show extreme values. 
+
+
+##Average daily acivity pattern
+
+```{r}
+
+ df %>% 
+ select(interval, steps) %>% 
+ group_by(interval) %>% summarise(Avg = mean(steps, na.rm = TRUE)) %>% 
+ arrange(interval, Avg) %>% 
+  
+  ggplot(aes(interval, Avg)) + geom_line()
+  
+```
+
+It would appear that, on average, the 835th interval shows the highest number of steps taken. This can also be easily seen by arranging the summarised dataframe in descending order of the mean steps per 5 minute interval, and printing out the top few rows.
+
+```{r}
+
+ df %>% 
+ select(interval, steps) %>% 
+ group_by(interval) %>% summarise(Avg = mean(steps, na.rm = TRUE)) %>% 
+ arrange(-Avg, interval) %>% head()
+
+```
+
+##Imputing missing values
+
+By looking at the summary of the data, we can see that there are 2304 rows of data with NA values. All these values are in the steps variable.
+
+```{r}
+
+summary(df)
+
+```
+
+The number of rows that house NA values can also be checked by removing all the NA rows from the data frame and then substracting the total number of rows of this new dataframe from the totalrows in the original raw data.
+
+```{r}
+
+nrow(df) - nrow(na.omit(df))
+
+```
+
+Filling all the NA values in the steps variable using the average of the corresponding interval.
+
+```{r}
+
+df %>% 
+  select(interval, steps) %>% 
+  group_by(interval) %>% 
+  summarise(Avg = mean(steps, na.rm = TRUE)) -> int_avgs
+
+df[is.na(df$steps), ] -> NA_df
+
+merge(NA_df, int_avgs, by = "interval")$Avg -> NA_df$steps
+
+rbind(NA_df, na.omit(df)) -> final_df
+
+```
+
+Now comparing the summary of the original datarame against the new dataframe
+
+```{r}
+
+summary(df)
+
+summary(final_df)
+
+```
+
+The new data frame final_df now has all the information of the original dataframe, except with the NA values filled in.
+
+Comparing the previous histogram of total steps taken, to the total steps from the new dataframe.
+
+```{r}
+
+final_df %>% 
+  select(date_reformat, steps) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Total = sum(steps)) %>% 
+  arrange(date_reformat, Total) -> df_totals
+
+ggplot(df_totals, aes(Total)) + 
+  geom_histogram(bins = 12) +
+  labs(x = "Total steps per day") + 
+  scale_x_continuous(breaks = pretty(df_totals$Total, 10))
+```
+
+Recalculating means and medians per day
+
+```{r}
+
+final_df %>% 
+  select(date_reformat, steps) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = mean(steps, na.rm = TRUE), Type = "Mean") %>% 
+  arrange(date_reformat, Avg) -> df_means
+
+final_df %>% 
+  select(date_reformat, steps) %>% 
+  filter(steps != 0) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = median(steps, na.rm = TRUE), Type = "Median") %>% 
+  arrange(date_reformat, Avg) -> df_medians
+
+  rbind(df_means, df_medians) -> df_averages
+
+ggplot(df_averages, aes(date_reformat, Avg, fill = Type)) + 
+  geom_bar(stat = "identity") + 
+  labs(x = "Dates", y = "Steps", title = "Mean and Median steps taken per day") + 
+  scale_x_date(date_breaks = "3 days") + theme(axis.text.x=element_text(angle=45, hjust=1))
+
+```
+
+Comparing the summarised dataframe from the raw file to the one with the NA values replaced should give us a good idea of what the impact of the imputation is.
+
+```{r}
+
+final_df %>% 
+  select(date_reformat, steps) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = mean(steps, na.rm = TRUE), Type = "Mean") %>% 
+  arrange(date_reformat, Avg) -> df_means_final
+
+final_df %>% 
+  select(date_reformat, steps) %>% 
+  filter(steps != 0) %>% 
+  group_by(date_reformat) %>% 
+  summarise(Avg = median(steps, na.rm = TRUE), Type = "Median") %>% 
+  arrange(date_reformat, Avg) -> df_medians_final
+
+  rbind(df_means_final, df_medians_final) -> df_averages_final
+
+  merge(df_averages, df_averages_final, by=c("date_reformat", "Type")) %>% 
+  mutate(diff = Avg.x - Avg.y) %>% summary()
+
+```
+
+From the summary we can see that the difference between the previous summary stats of the original raw data and the current modified dataframe with NA values populated, is minimal to nothing. The diff column in this summary output shows the differences in the averages between the old summarisation and the current one. The summary statistics of this diff column shows that there is no difference between the previous averages and the current ones. Hence, there is no impact of this imputation to the estimates of the total daily number of steps.
+
+#Differences in activity between weekends and weedays
+
+Using the weekend() function, it's possible to created a new column that indicates if a date falls on a weekend or a weekday. We can then compare the interval activity on weekds and weekdays.
+
+```{r}
+
+final_df$date_reformat %>% weekdays() -> days
+
+days == c("Saturday", "Sunday") -> weekend_log
+
+final_df$Day <- NA
+
+final_df$Day[weekend_log] <- "Weekend"
+final_df$Day[!weekend_log] <- "Weekday"
+
+as.factor(final_df$Day) -> final_df$Day
+
+
+final_df %>% 
+  select(interval, steps, Day) %>% 
+  group_by(interval, Day) %>% 
+  summarise(Avg = log10(mean(steps))) %>% 
+  arrange(interval, Avg) %>% 
+  
+  ggplot(aes(interval, Avg)) + geom_line() + 
+  facet_wrap(~Day, nrow = 2, ncol = 1)
+
+```
